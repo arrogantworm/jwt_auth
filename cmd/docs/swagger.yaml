@@ -1,0 +1,258 @@
+basePath: /
+definitions:
+  handler.ErrorRes:
+    properties:
+      error:
+        type: string
+    type: object
+  handler.LoginUserReq:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  handler.LoginUserRes:
+    properties:
+      accessToken:
+        type: string
+      accessTokenTTL:
+        type: string
+      refreshToken:
+        type: string
+      refreshTokenTTL:
+        type: string
+      sessionID:
+        type: string
+      user:
+        $ref: '#/definitions/handler.UserRes'
+    type: object
+  handler.RenewAccessTokenReq:
+    properties:
+      refreshToken:
+        type: string
+    type: object
+  handler.RenewAccessTokenRes:
+    properties:
+      accessToken:
+        type: string
+      accessTokenTTL:
+        type: string
+      refreshToken:
+        type: string
+      refreshTokenTTL:
+        type: string
+    type: object
+  handler.SuccessRes:
+    properties:
+      success:
+        type: string
+    type: object
+  handler.UserReq:
+    properties:
+      name:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  handler.UserRes:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      username:
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: JWT Authorization project
+  title: JWT Authorization
+  version: "0.1"
+paths:
+  /api/user:
+    get:
+      description: Get user info
+      operationId: user-info
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.UserRes'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      security:
+      - BearerAuth: []
+      summary: UserInfo
+      tags:
+      - user
+  /auth/logout:
+    post:
+      description: Logout
+      operationId: auth-logout
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessRes'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      security:
+      - BearerAuth: []
+      summary: LogOut
+      tags:
+      - auth
+  /auth/signin:
+    post:
+      consumes:
+      - application/json
+      description: Login
+      operationId: auth-signin
+      parameters:
+      - description: Credentials
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginUserReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.LoginUserRes'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      summary: SignIn
+      tags:
+      - auth
+  /auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Registration
+      operationId: auth-signup
+      parameters:
+      - description: User info
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UserReq'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.SuccessRes'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      summary: SignUp
+      tags:
+      - auth
+  /auth/tokens/renew:
+    post:
+      consumes:
+      - application/json
+      description: Renew JWT Token
+      operationId: auth-renew
+      parameters:
+      - description: JWT Token
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RenewAccessTokenReq'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RenewAccessTokenRes'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      security:
+      - BearerAuth: []
+      summary: Renew JWT Token
+      tags:
+      - auth
+      - tokens
+  /auth/tokens/revoke:
+    post:
+      description: Revoke JWT Token
+      operationId: auth-revoke
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SuccessRes'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorRes'
+      security:
+      - BearerAuth: []
+      summary: Revoke JWT Token
+      tags:
+      - auth
+      - tokens
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

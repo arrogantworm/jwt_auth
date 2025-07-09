@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,7 +19,9 @@ func GetAuthMiddlewareFunc(tokenMaker *token.JWTMaker) func(http.Handler) http.H
 
 			claims, err := verifyClaimsFromAuthHeader(r, tokenMaker)
 			if err != nil {
-				http.Error(w, fmt.Sprintf("error verifying token: %v", err), http.StatusUnauthorized)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(ErrorRes{fmt.Sprintf("error verifying token: %v", err)})
 				return
 			}
 

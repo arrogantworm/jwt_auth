@@ -7,10 +7,22 @@ import (
 
 	"github.com/arrogantworm/jwt_auth/api/handler"
 	"github.com/arrogantworm/jwt_auth/api/server"
+	_ "github.com/arrogantworm/jwt_auth/cmd/docs"
 	"github.com/arrogantworm/jwt_auth/db"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
+
+// @title JWT Authorization
+// @version 0.1
+// @description JWT Authorization project
+
+// @host localhost:8000
+// @BasePath /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 
 func main() {
 

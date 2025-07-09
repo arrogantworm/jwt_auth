@@ -44,6 +44,16 @@ func (h *Handler) sendError(w http.ResponseWriter, message string, status int) {
 	}
 }
 
+func (h *Handler) sendSuccess(w http.ResponseWriter, message string, status int) {
+	w.WriteHeader(status)
+	if message == "" {
+		http.Error(w, "", status)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(SuccessRes{message})
+	}
+}
+
 // api/test/
 func (h *Handler) testHandler(w http.ResponseWriter, r *http.Request) {
 	// userAgent := r.Header.Get("User-Agent")
@@ -77,6 +87,15 @@ func (h *Handler) newIpReciever(w http.ResponseWriter, r *http.Request) {
 }
 
 // api/user
+// @Summary UserInfo
+// @Tags user
+// @Description Get user info
+// @ID user-info
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} UserRes
+// @Failure 401,500 {object} ErrorRes
+// @Router /api/user [get]
 func (h *Handler) getUserInfo(w http.ResponseWriter, r *http.Request) {
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
@@ -95,11 +114,26 @@ func (h *Handler) getUserInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // auth/signup
+// @Summary SignUp
+// @Tags auth
+// @Description Registration
+// @ID auth-signup
+// @Accept json
+// @Param input body UserReq true "User info"
+// @Produce json
+// @Success 201 {object} SuccessRes
+// @Failure 400,500 {object} ErrorRes
+// @Router /auth/signup [post]
 func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	var u UserReq
 
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
 		h.sendError(w, "", http.StatusBadRequest)
+		return
+	}
+
+	if u.Name == "" || u.Username == "" || u.Password == "" {
+		h.sendError(w, "all fields are required", http.StatusBadRequest)
 		return
 	}
 
@@ -128,9 +162,7 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// res := toUserRes(created)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("user registered"))
+	h.sendSuccess(w, "user registered", http.StatusCreated)
 }
 
 func toDBUser(u UserReq) *db.User {
@@ -150,11 +182,26 @@ func toUserRes(u *db.User) UserRes {
 }
 
 // auth/signin
+// @Summary SignIn
+// @Tags auth
+// @Description Login
+// @ID auth-signin
+// @Accept json
+// @Param input body LoginUserReq true "Credentials"
+// @Produce json
+// @Success 200 {object} LoginUserRes
+// @Failure 400,401,500 {object} ErrorRes
+// @Router /auth/signin [post]
 func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	var u LoginUserReq
 
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
 		h.sendError(w, "", http.StatusBadRequest)
+		return
+	}
+
+	if u.Username == "" || u.Password == "" {
+		h.sendError(w, "all fields are required", http.StatusBadRequest)
 		return
 	}
 
@@ -236,6 +283,15 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // auth/logout
+// @Summary LogOut
+// @Tags auth
+// @Description Logout
+// @ID auth-logout
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} SuccessRes
+// @Failure 401,500 {object} ErrorRes
+// @Router /auth/logout [post]
 func (h *Handler) logoutUser(w http.ResponseWriter, r *http.Request) {
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
@@ -245,13 +301,21 @@ func (h *Handler) logoutUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	// w.Write([]byte(claims.RegisteredClaims.ID))
-	w.Write([]byte("logged out"))
+	h.sendSuccess(w, "logged out", http.StatusOK)
 }
 
 // auth/tokens/renew
+// @Summary Renew JWT Token
+// @Tags auth, tokens
+// @Description Renew JWT Token
+// @ID auth-renew
+// @Security BearerAuth
+// @Accept json
+// @Param input body RenewAccessTokenReq true "JWT Token"
+// @Produce json
+// @Success 200 {object} RenewAccessTokenRes
+// @Failure 400,401,500 {object} ErrorRes
+// @Router /auth/tokens/renew [post]
 func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
@@ -366,6 +430,15 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // auth/tokens/revoke
+// @Summary Revoke JWT Token
+// @Tags auth, tokens
+// @Description Revoke JWT Token
+// @ID auth-revoke
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} SuccessRes
+// @Failure 401,500 {object} ErrorRes
+// @Router /auth/tokens/revoke [post]
 func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
@@ -375,7 +448,5 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("session revoked"))
+	h.sendSuccess(w, "session revoked", http.StatusOK)
 }
