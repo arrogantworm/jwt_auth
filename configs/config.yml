@@ -1,0 +1,15 @@
+port: "8000"
+
+db:
+  user: "go_user"
+  host: "localhost"
+  port: 5432
+  dbname: "go_db"
+  sslmode: "disable"
+
+auth:
+  accessTokenTTL: 5m
+  refreshTokenTTL: 43200m # 30 days
+
+notifications:
+  newIpURL: "http://localhost:8000/new-ip/"

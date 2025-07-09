@@ -1,0 +1,378 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"time"
+
+	"github.com/arrogantworm/jwt_auth/api/token"
+	"github.com/arrogantworm/jwt_auth/api/utils"
+	"github.com/arrogantworm/jwt_auth/db"
+)
+
+type Handler struct {
+	ctx        context.Context
+	db         *db.Postgres
+	TokenMaker *token.JWTMaker
+}
+
+func NewHandler(db *db.Postgres, secretKey string) (*Handler, error) {
+
+	if secretKey == "" {
+		return nil, errors.New("secret key not found")
+	}
+
+	return &Handler{
+		ctx:        context.Background(),
+		db:         db,
+		TokenMaker: token.NewJWTMaker(secretKey),
+	}, nil
+}
+
+// api/test/
+func (h *Handler) testHandler(w http.ResponseWriter, r *http.Request) {
+	// userAgent := r.Header.Get("User-Agent")
+	// if userAgent == "" {
+	// 	userAgent = "unknown"
+	// }
+
+	// ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	// if err != nil {
+	// 	ip = r.RemoteAddr
+	// }
+
+	// w.Write([]byte(ip))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	json.NewEncoder(w).Encode(ErrorRes{"error updating session"})
+}
+
+// new-ip/
+func (h *Handler) newIpReciever(w http.ResponseWriter, r *http.Request) {
+	var req utils.NewIpNotification
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Received IP Change for user %d\nOldIP: %s\nNewIP: %s", req.UserID, req.OldIp, req.NewIp)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte{})
+}
+
+// api/user
+func (h *Handler) getUserInfo(w http.ResponseWriter, r *http.Request) {
+
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	u, err := h.db.GetUserById(h.ctx, claims.ID)
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrorRes{"error getting user"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(toUserRes(u))
+
+}
+
+// auth/signup
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	var u UserReq
+
+	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	hashed, err := utils.HashPassword(u.Password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	u.Password = hashed
+
+	check, err := h.db.CheckUsername(h.ctx, u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if check {
+		http.Error(w, "username is already taken", http.StatusBadRequest)
+		return
+	}
+
+	_, err = h.db.CreateUser(h.ctx, toDBUser(u))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// res := toUserRes(created)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte("user registered"))
+}
+
+func toDBUser(u UserReq) *db.User {
+	return &db.User{
+		Name:     u.Name,
+		Username: u.Username,
+		Password: u.Password,
+	}
+}
+
+func toUserRes(u *db.User) UserRes {
+	return UserRes{
+		Id:       u.ID,
+		Name:     u.Name,
+		Username: u.Username,
+	}
+}
+
+// auth/signin
+func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
+	var u LoginUserReq
+
+	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Check if user exists
+	gu, err := h.db.GetUserByUsername(h.ctx, u.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Check is password is valid
+
+	err = utils.CheckPassword(u.Password, gu.Password)
+	if err != nil {
+		http.Error(w, "wrong password", http.StatusUnauthorized)
+		return
+	}
+
+	userAgent := r.UserAgent()
+	if userAgent == "" {
+		userAgent = "unknown"
+	}
+
+	userIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		userIP = r.RemoteAddr
+	}
+
+	accessToken, accessClaims, err := h.TokenMaker.CreateAccessToken(gu.ID, gu.Username)
+
+	if err != nil {
+		http.Error(w, "error creating token", http.StatusInternalServerError)
+		return
+	}
+
+	// refreshToken, refreshClaims, err := h.TokenMaker.CreateToken(gu.ID, gu.Username)
+	refreshToken, err := h.TokenMaker.CreateRefreshToken()
+
+	if err != nil {
+		http.Error(w, "error creating token", http.StatusInternalServerError)
+		return
+	}
+
+	hashedRefreshToken, err := utils.HashRefreshToken(refreshToken)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error encrypting refresh token: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	refreshTTL := time.Now().Add(h.TokenMaker.RefreshTokenTTL)
+
+	// Create Session
+
+	s, err := h.db.CreateOrUpdateSession(h.ctx, &db.Session{
+		SessionID:    accessClaims.RegisteredClaims.ID,
+		UserID:       gu.ID,
+		RefreshToken: hashedRefreshToken,
+		UserAgent:    userAgent,
+		IPAddress:    userIP,
+		ExpiresAt:    refreshTTL,
+	})
+	if err != nil {
+		http.Error(w, "error saving session", http.StatusInternalServerError)
+		return
+	}
+
+	res := LoginUserRes{
+		SessionID:       s.SessionID,
+		AccessToken:     accessToken,
+		AccessTokenTTL:  accessClaims.ExpiresAt.Time,
+		RefreshToken:    refreshToken,
+		RefreshTokenTTL: refreshTTL,
+		User:            toUserRes(gu),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(res)
+}
+
+// auth/logout
+func (h *Handler) logoutUser(w http.ResponseWriter, r *http.Request) {
+
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	if err := h.db.DeleteSession(h.ctx, claims.RegisteredClaims.ID); err != nil {
+		http.Error(w, "error revoking a session", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	// w.Write([]byte(claims.RegisteredClaims.ID))
+	w.Write([]byte("logged out"))
+}
+
+// auth/tokens/renew
+func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
+
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	var req RenewAccessTokenReq
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "error decoding request body", http.StatusBadRequest)
+		return
+	}
+
+	// refreshClaims, err := h.TokenMaker.VerifyToken(req.RefreshToken)
+	// if err != nil {
+	// 	http.Error(w, "error verifying token", http.StatusUnauthorized)
+	// 	return
+	// }
+
+	s, err := h.db.GetSession(h.ctx, claims.RegisteredClaims.ID)
+	if err != nil {
+		http.Error(w, "error getting session", http.StatusInternalServerError)
+		return
+	}
+
+	// Check refresh token
+	if err := utils.CheckRefreshToken(req.RefreshToken, s.RefreshToken); err != nil {
+		http.Error(w, "refresh token does not match", http.StatusUnauthorized)
+		return
+	}
+
+	// UserAgent check
+	if r.UserAgent() != s.UserAgent {
+		http.Error(w, "user agent does not match", http.StatusUnauthorized)
+		h.db.DeleteSession(h.ctx, claims.RegisteredClaims.ID)
+		return
+	}
+
+	// IP check
+	userIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		userIP = r.RemoteAddr
+	}
+
+	if userIP != s.IPAddress {
+		log.Println("[IP NOT MATCH]", s.UserID, s.IPAddress, " -- ", userIP)
+		go utils.ChangedIPRequest(utils.NewIpNotification{UserID: s.UserID, NewIp: userIP, OldIp: s.IPAddress})
+	}
+
+	if s.IsRevoked {
+		http.Error(w, "session revoked", http.StatusUnauthorized)
+		return
+	}
+
+	if s.UserID != claims.ID {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// u, err := h.db.GetUserByUsername(h.ctx, refreshClaims.Subject)
+	// if err != nil {
+	// 	http.Error(w, "error getting user", http.StatusInternalServerError)
+	// 	return
+	// }
+
+	u := db.User{
+		ID:       claims.ID,
+		Username: claims.Subject,
+	}
+
+	accessToken, accessClaims, err := h.TokenMaker.CreateAccessToken(u.ID, u.Username)
+	if err != nil {
+		http.Error(w, "error creating accessToken", http.StatusInternalServerError)
+		return
+	}
+
+	// refreshToken, refreshClaims, err := h.TokenMaker.CreateToken(u.ID, u.Username)
+
+	// if err != nil {
+	// 	http.Error(w, "error creating token", http.StatusInternalServerError)
+	// 	return
+	// }
+
+	refreshToken, err := h.TokenMaker.CreateRefreshToken()
+
+	if err != nil {
+		http.Error(w, "error creating token", http.StatusInternalServerError)
+		return
+	}
+
+	refreshedTTL := time.Now().Add(h.TokenMaker.RefreshTokenTTL)
+
+	hashedRefreshToken, err := utils.HashRefreshToken(refreshToken)
+	if err != nil {
+		http.Error(w, "error encrypting refresh token", http.StatusInternalServerError)
+	}
+
+	if err := h.db.RenewAccessToken(h.ctx, accessClaims.RegisteredClaims.ID, claims.RegisteredClaims.ID, hashedRefreshToken, userIP); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrorRes{"error updating session"})
+		return
+	}
+
+	res := RenewAccessTokenRes{
+		AccessToken:     accessToken,
+		AccessTokenTTL:  accessClaims.ExpiresAt.Time,
+		RefreshToken:    refreshToken,
+		RefreshTokenTTL: refreshedTTL,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(res)
+}
+
+// auth/tokens/revoke
+func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
+
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	if err := h.db.RevokeSession(h.ctx, claims.RegisteredClaims.ID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrorRes{"error revoking session"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("session revoked"))
+}

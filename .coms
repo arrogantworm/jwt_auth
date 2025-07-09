@@ -1,0 +1,1 @@
+postgres://go_user:db_pass@localhost:5432/go_db?sslmode=disable
