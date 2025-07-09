@@ -1,0 +1,35 @@
+services:
+
+  postgres:
+    image: postgres:17.5
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=go_db
+      - POSTGRES_USER=go_user
+      - POSTGRES_PASSWORD=db_pass
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U go_user -d go_db" ]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+
+  migrate:
+    image: migrate/migrate
+    volumes:
+        - ./db/migrations:/migrations
+    command: ["-path", "/migrations", "-database",  "$DB_URL", "up"]
+    links: 
+        - postgres
+
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: ./jwt-app
+    ports:
+      - 8000:8000
+    depends_on:
+      postgres:
+        condition: service_healthy

@@ -47,11 +47,15 @@ func main() {
 	}
 	defer postgres.Close()
 
+	log.Println("connected to database")
+
 	handler, err := handler.NewHandler(postgres, os.Getenv("SECRET_KEY"))
 	if err != nil {
 		log.Fatalf("failed to initialize handlers: %s", err.Error())
 	}
 	router := handler.RegisterRoutes()
+
+	log.Println("starting server")
 
 	srv := new(server.Server)
 	if err := srv.Run(viper.GetString("port"), router); err != nil {

@@ -18,7 +18,7 @@ func (s *Server) Run(port string, handler http.Handler) error {
 		ReadTimeout:    time.Second * 10,
 		WriteTimeout:   time.Second * 10,
 	}
-
+	
 	return s.httpServer.ListenAndServe()
 }
 
