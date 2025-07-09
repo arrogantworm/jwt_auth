@@ -34,6 +34,16 @@ func NewHandler(db *db.Postgres, secretKey string) (*Handler, error) {
 	}, nil
 }
 
+func (h *Handler) sendError(w http.ResponseWriter, message string, status int) {
+	w.WriteHeader(status)
+	if message == "" {
+		http.Error(w, "", status)
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ErrorRes{message})
+	}
+}
+
 // api/test/
 func (h *Handler) testHandler(w http.ResponseWriter, r *http.Request) {
 	// userAgent := r.Header.Get("User-Agent")
@@ -48,9 +58,7 @@ func (h *Handler) testHandler(w http.ResponseWriter, r *http.Request) {
 
 	// w.Write([]byte(ip))
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	json.NewEncoder(w).Encode(ErrorRes{"error updating session"})
+	h.sendError(w, "error updating session", http.StatusInternalServerError)
 }
 
 // new-ip/
@@ -58,7 +66,7 @@ func (h *Handler) newIpReciever(w http.ResponseWriter, r *http.Request) {
 	var req utils.NewIpNotification
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.sendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -76,9 +84,7 @@ func (h *Handler) getUserInfo(w http.ResponseWriter, r *http.Request) {
 	u, err := h.db.GetUserById(h.ctx, claims.ID)
 
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorRes{"error getting user"})
+		h.sendError(w, "error getting user", http.StatusInternalServerError)
 		return
 	}
 
@@ -93,31 +99,31 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	var u UserReq
 
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.sendError(w, "", http.StatusBadRequest)
 		return
 	}
 
 	hashed, err := utils.HashPassword(u.Password)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.sendError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	u.Password = hashed
 
 	check, err := h.db.CheckUsername(h.ctx, u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.sendError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if check {
-		http.Error(w, "username is already taken", http.StatusBadRequest)
+		h.sendError(w, "username is already taken", http.StatusBadRequest)
 		return
 	}
 
 	_, err = h.db.CreateUser(h.ctx, toDBUser(u))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.sendError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -148,14 +154,14 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	var u LoginUserReq
 
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		h.sendError(w, "", http.StatusBadRequest)
 		return
 	}
 
 	// Check if user exists
 	gu, err := h.db.GetUserByUsername(h.ctx, u.Username)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.sendError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -163,7 +169,7 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 
 	err = utils.CheckPassword(u.Password, gu.Password)
 	if err != nil {
-		http.Error(w, "wrong password", http.StatusUnauthorized)
+		h.sendError(w, "wrong password", http.StatusUnauthorized)
 		return
 	}
 
@@ -180,7 +186,7 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	accessToken, accessClaims, err := h.TokenMaker.CreateAccessToken(gu.ID, gu.Username)
 
 	if err != nil {
-		http.Error(w, "error creating token", http.StatusInternalServerError)
+		h.sendError(w, "error creating token", http.StatusInternalServerError)
 		return
 	}
 
@@ -188,13 +194,13 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 	refreshToken, err := h.TokenMaker.CreateRefreshToken()
 
 	if err != nil {
-		http.Error(w, "error creating token", http.StatusInternalServerError)
+		h.sendError(w, "error creating token", http.StatusInternalServerError)
 		return
 	}
 
 	hashedRefreshToken, err := utils.HashRefreshToken(refreshToken)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error encrypting refresh token: %v", err), http.StatusInternalServerError)
+		h.sendError(w, fmt.Sprintf("error encrypting refresh token: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -211,7 +217,7 @@ func (h *Handler) loginUser(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    refreshTTL,
 	})
 	if err != nil {
-		http.Error(w, "error saving session", http.StatusInternalServerError)
+		h.sendError(w, "error saving session", http.StatusInternalServerError)
 		return
 	}
 
@@ -235,7 +241,7 @@ func (h *Handler) logoutUser(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
 	if err := h.db.DeleteSession(h.ctx, claims.RegisteredClaims.ID); err != nil {
-		http.Error(w, "error revoking a session", http.StatusInternalServerError)
+		h.sendError(w, "error revoking a session", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,7 +259,7 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 	var req RenewAccessTokenReq
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "error decoding request body", http.StatusBadRequest)
+		h.sendError(w, "", http.StatusBadRequest)
 		return
 	}
 
@@ -265,19 +271,19 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 
 	s, err := h.db.GetSession(h.ctx, claims.RegisteredClaims.ID)
 	if err != nil {
-		http.Error(w, "error getting session", http.StatusInternalServerError)
+		h.sendError(w, "error getting session", http.StatusInternalServerError)
 		return
 	}
 
 	// Check refresh token
 	if err := utils.CheckRefreshToken(req.RefreshToken, s.RefreshToken); err != nil {
-		http.Error(w, "refresh token does not match", http.StatusUnauthorized)
+		h.sendError(w, "refresh token does not match", http.StatusUnauthorized)
 		return
 	}
 
 	// UserAgent check
 	if r.UserAgent() != s.UserAgent {
-		http.Error(w, "user agent does not match", http.StatusUnauthorized)
+		h.sendError(w, "user agent does not match", http.StatusUnauthorized)
 		h.db.DeleteSession(h.ctx, claims.RegisteredClaims.ID)
 		return
 	}
@@ -294,12 +300,12 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.IsRevoked {
-		http.Error(w, "session revoked", http.StatusUnauthorized)
+		h.sendError(w, "session revoked", http.StatusUnauthorized)
 		return
 	}
 
 	if s.UserID != claims.ID {
-		http.Error(w, "invalid session", http.StatusUnauthorized)
+		h.sendError(w, "invalid session", http.StatusUnauthorized)
 		return
 	}
 
@@ -316,7 +322,7 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, accessClaims, err := h.TokenMaker.CreateAccessToken(u.ID, u.Username)
 	if err != nil {
-		http.Error(w, "error creating accessToken", http.StatusInternalServerError)
+		h.sendError(w, "error creating accessToken", http.StatusInternalServerError)
 		return
 	}
 
@@ -330,7 +336,7 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 	refreshToken, err := h.TokenMaker.CreateRefreshToken()
 
 	if err != nil {
-		http.Error(w, "error creating token", http.StatusInternalServerError)
+		h.sendError(w, "error creating token", http.StatusInternalServerError)
 		return
 	}
 
@@ -338,13 +344,12 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 
 	hashedRefreshToken, err := utils.HashRefreshToken(refreshToken)
 	if err != nil {
-		http.Error(w, "error encrypting refresh token", http.StatusInternalServerError)
+		h.sendError(w, "error encrypting refresh token", http.StatusInternalServerError)
+		return
 	}
 
 	if err := h.db.RenewAccessToken(h.ctx, accessClaims.RegisteredClaims.ID, claims.RegisteredClaims.ID, hashedRefreshToken, userIP); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorRes{"error updating session"})
+		h.sendError(w, "error updating session", http.StatusInternalServerError)
 		return
 	}
 
@@ -366,9 +371,7 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 
 	if err := h.db.RevokeSession(h.ctx, claims.RegisteredClaims.ID); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorRes{"error revoking session"})
+		h.sendError(w, "error revoking session", http.StatusInternalServerError)
 		return
 	}
 
