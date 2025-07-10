@@ -35,23 +35,26 @@ func NewHandler(db *db.Postgres, secretKey string) (*Handler, error) {
 }
 
 func (h *Handler) sendError(w http.ResponseWriter, message string, status int) {
-	w.WriteHeader(status)
 	if message == "" {
 		http.Error(w, "", status)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ErrorRes{message})
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorRes{message})
 }
 
 func (h *Handler) sendSuccess(w http.ResponseWriter, message string, status int) {
-	w.WriteHeader(status)
+
 	if message == "" {
-		http.Error(w, "", status)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(SuccessRes{message})
+		w.WriteHeader(status)
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(SuccessRes{message})
 }
 
 // api/test/
