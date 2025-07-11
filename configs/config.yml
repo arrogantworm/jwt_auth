@@ -8,7 +8,7 @@ db:
   sslmode: "disable"
 
 auth:
-  accessTokenTTL: 5s
+  accessTokenTTL: 5m
   refreshTokenTTL: 43200m # 30 days
 
 notifications:
