@@ -348,6 +348,13 @@ func (h *Handler) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check refresh token TTL
+	if time.Now().After(s.ExpiresAt) {
+		h.sendError(w, "refresh token expired", http.StatusUnauthorized)
+		h.db.DeleteSession(h.ctx, claims.RegisteredClaims.ID)
+		return
+	}
+
 	// UserAgent check
 	if r.UserAgent() != s.UserAgent {
 		h.sendError(w, "user agent does not match", http.StatusUnauthorized)
