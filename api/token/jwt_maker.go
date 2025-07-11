@@ -92,3 +92,26 @@ func (m *JWTMaker) VerifyToken(accessToken string) (*UserClaims, error) {
 
 	return claims, nil
 }
+
+func (m *JWTMaker) VerifyTokenNoExp(accessToken string) (*UserClaims, error) {
+	token, err := jwt.ParseWithClaims(accessToken, &UserClaims{}, func(t *jwt.Token) (interface{}, error) {
+		_, ok := t.Method.(*jwt.SigningMethodHMAC)
+		if !ok {
+			return nil, fmt.Errorf("invalid token signing method")
+		}
+
+		return []byte(m.secretKey), nil
+	}, jwt.WithoutClaimsValidation())
+
+	if err != nil {
+		return nil, fmt.Errorf("error parsing token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*UserClaims)
+
+	if !ok {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
+}

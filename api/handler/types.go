@@ -40,6 +40,7 @@ type (
 	}
 
 	RenewAccessTokenReq struct {
+		AccessToken  string `json:"accesToken"`
 		RefreshToken string `json:"refreshToken"`
 	}
 

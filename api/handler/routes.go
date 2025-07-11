@@ -3,12 +3,22 @@ package handler
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 func (h *Handler) RegisterRoutes() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.StripSlashes)
+
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
 
 	tokenMaker := h.TokenMaker
 
@@ -18,9 +28,8 @@ func (h *Handler) RegisterRoutes() *chi.Mux {
 		r.With(GetAuthMiddlewareFunc(tokenMaker)).Post("/logout", h.logoutUser)
 
 		r.Route("/tokens", func(r chi.Router) {
-			r.Use(GetAuthMiddlewareFunc(tokenMaker))
-			r.Post("/renew", h.renewAccessToken)
-			r.Post("/revoke", h.revokeSession)
+			r.With(GetAuthMiddlewareFunc(tokenMaker)).Post("/revoke", h.revokeSession)
+			r.With(GetUserClaimsMiddlewareFunc(tokenMaker)).Post("/renew", h.renewAccessToken)
 		})
 	})
 

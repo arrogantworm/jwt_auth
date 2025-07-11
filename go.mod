@@ -12,7 +12,10 @@ require (
 	golang.org/x/crypto v0.39.0
 )
 
-require github.com/swaggo/files/v2 v2.0.0 // indirect
+require (
+	github.com/go-chi/cors v1.2.2 // indirect
+	github.com/swaggo/files/v2 v2.0.0 // indirect
+)
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
